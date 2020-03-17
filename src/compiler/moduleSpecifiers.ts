@@ -172,24 +172,21 @@ namespace ts.moduleSpecifiers {
         importingFileName: string,
         importedFileName: string,
         host: ModuleSpecifierResolutionHost,
-        preferSymlinks: boolean,
         cb: (fileName: string) => T | undefined
     ): T | undefined {
         const getCanonicalFileName = hostGetCanonicalFileName(host);
         const cwd = host.getCurrentDirectory();
-        const redirects = host.redirectTargetsMap.get(toPath(importedFileName, cwd, getCanonicalFileName));
-        const importedFileNames = redirects ? [...redirects, importedFileName] : [importedFileName];
+        const redirects = host.redirectTargetsMap.get(toPath(importedFileName, cwd, getCanonicalFileName)) || emptyArray;
+        const importedFileNames = [importedFileName, ...redirects];
         const targets = importedFileNames.map(f => getNormalizedAbsolutePath(f, cwd));
-        if (!preferSymlinks) {
             const result = forEach(targets, cb);
             if (result) return result;
-        }
         const links = host.getProbableSymlinks
             ? host.getProbableSymlinks(host.getSourceFiles())
             : discoverProbableSymlinks(host.getSourceFiles(), getCanonicalFileName, cwd);
 
         const compareStrings = (!host.useCaseSensitiveFileNames || host.useCaseSensitiveFileNames()) ? compareStringsCaseSensitive : compareStringsCaseInsensitive;
-        const result = forEachEntry(links, (resolved, path) => {
+        return forEachEntry(links, (resolved, path) => {
             if (startsWithDirectory(importingFileName, resolved, getCanonicalFileName)) {
                 return undefined; // Don't want to a package to globally import from itself
             }
@@ -204,8 +201,6 @@ namespace ts.moduleSpecifiers {
                 if (result) return result;
             }
         });
-        return result ||
-            (preferSymlinks ? forEach(targets, cb) : undefined);
     }
 
     /**
@@ -216,14 +211,15 @@ namespace ts.moduleSpecifiers {
         const cwd = host.getCurrentDirectory();
         const getCanonicalFileName = hostGetCanonicalFileName(host);
         const allFileNames = createMap<string>();
+        let importedFileFromNodeModules = false;
         forEachFileNameOfModule(
             importingFileName,
             importedFileName,
             host,
-            /*preferSymlinks*/ true,
             path => {
                 // dont return value, so we collect everything
                 allFileNames.set(path, getCanonicalFileName(path));
+                importedFileFromNodeModules = importedFileFromNodeModules || pathContainsNodeModules(path);
             }
         );
 
@@ -237,7 +233,10 @@ namespace ts.moduleSpecifiers {
             let pathsInDirectory: string[] | undefined;
             allFileNames.forEach((canonicalFileName, fileName) => {
                 if (startsWith(canonicalFileName, directoryStart)) {
-                    (pathsInDirectory || (pathsInDirectory = [])).push(fileName);
+                    // If the importedFile is from node modules, use only paths in node_modules folder as option
+                    if (!importedFileFromNodeModules || pathContainsNodeModules(fileName)) {
+                        (pathsInDirectory || (pathsInDirectory = [])).push(fileName);
+                    }
                     allFileNames.delete(fileName);
                 }
             });

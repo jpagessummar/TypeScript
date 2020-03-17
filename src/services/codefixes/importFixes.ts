@@ -837,7 +837,6 @@ namespace ts.codefix {
             from.fileName,
             to.fileName,
             moduleSpecifierResolutionHost,
-            /*preferSymlinks*/ false,
             toPath => {
                 const toFile = program.getSourceFile(toPath);
                 // Determine to import using toPath only if toPath is what we were looking at
